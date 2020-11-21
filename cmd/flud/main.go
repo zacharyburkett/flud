@@ -1,30 +1,23 @@
 package main
 
 import (
-	"image/png"
-	"log"
+	"fmt"
 	"os"
-
-	"github.com/zacharyburkett/flud/icmpflut"
 )
 
 func main() {
-	f, err := os.Open("test.png")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
-
-	img, err := png.Decode(f)
-	if err != nil {
-		log.Fatal(err)
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: flud <subcommand> <args>")
+		os.Exit(1)
 	}
 
-	renderer := icmpflut.NewRenderer(img)
+	switch os.Args[1] {
+	case "icmp":
+		icmpCmd.Parse(os.Args[2:])
+		execICMP()
 
-	for {
-		if err := renderer.Draw(); err != nil {
-			log.Println(err)
-		}
+	default:
+		fmt.Printf("%s is not a valid subcommand\n", os.Args[1])
+		os.Exit(1)
 	}
 }

@@ -3,48 +3,74 @@ package icmpflut
 import (
 	"image"
 	"log"
-	"net"
+	"sync"
 
 	"github.com/mehrdadrad/ping"
 )
 
 type Renderer struct {
-	ips   []net.IP
+	ips   <-chan string
 	index int
+
+	options Options
 }
 
-func NewRenderer(img image.Image) *Renderer {
+func NewRenderer(img image.Image, options Options) *Renderer {
 	return &Renderer{
-		ips: imageToIPs(img),
+		ips:     imageToIPs(img, options),
+		options: options,
 	}
 }
 
 func (r *Renderer) Draw() error {
-	ip := r.nextIP().To16().String()
-	p, err := ping.New(ip)
-	if err != nil {
-		return err
+	var wg sync.WaitGroup
+	wg.Add(r.options.Workers)
+
+	for i := 0; i < r.options.Workers; i++ {
+		go func() {
+			defer wg.Done()
+
+			for {
+				ip, ok := <-r.ips
+				if !ok {
+					return
+				}
+
+				p, err := ping.New(ip)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+
+				ping := func() bool {
+					p.SetCount(1)
+					p.SetTimeout(r.options.Timeout)
+
+					resp, err := p.Run()
+					if err != nil {
+						log.Println(err)
+						return false
+					}
+
+					r := <-resp
+					if r.Err == nil {
+						log.Println(r)
+						return true
+					}
+
+					return false
+				}
+
+				for i := 0; i < r.options.Count; i++ {
+					if ping() {
+						break
+					}
+				}
+			}
+		}()
 	}
 
-	p.SetCount(1)
-	p.SetTimeout("10s")
-
-	resp, err := p.Run()
-	if err != nil {
-		return err
-	}
-	log.Println(<-resp)
+	wg.Wait()
 
 	return nil
-}
-
-func (r *Renderer) nextIP() net.IP {
-	ip := r.ips[r.index]
-
-	r.index++
-	if r.index >= len(r.ips) {
-		r.index = 0
-	}
-
-	return ip
 }

@@ -3,22 +3,44 @@ package icmpflut
 import (
 	"fmt"
 	"image"
-	"net"
+	"math/rand"
+	"time"
 )
 
-func imageToIPs(img image.Image) []net.IP {
-	var ips []net.IP
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
-	const template = "2001:41d0:2:9b23:%04d:%04d:%02x%02x:%02x"
+func imageToIPs(img image.Image, options Options) <-chan string {
+	ips := make(chan string, options.Workers)
 
-	for x := 0; x < img.Bounds().Dx(); x++ {
-		for y := 0; y < img.Bounds().Dy(); y++ {
-			r, g, b, _ := img.At(x, y).RGBA()
+	var template = options.Prefix + "%04d:%04d:%02x%02x:%02x"
 
-			ip := fmt.Sprintf(template, x, y, r/257, g/257, b/257)
-			ips = append(ips, net.ParseIP(ip))
+	go func() {
+		var buffer []string
+
+		for x := 0; x < img.Bounds().Dx(); x++ {
+			for y := 0; y < img.Bounds().Dy(); y++ {
+				r, g, b, a := img.At(x, y).RGBA()
+				if a == 0 {
+					continue
+				}
+
+				ip := fmt.Sprintf(template, x+options.X, y+options.Y, r/257, g/257, b/257)
+				buffer = append(buffer, ip)
+			}
 		}
-	}
+
+		rand.Shuffle(len(buffer), func(i, j int) {
+			buffer[i], buffer[j] = buffer[j], buffer[i]
+		})
+
+		for {
+			for _, ip := range buffer {
+				ips <- ip
+			}
+		}
+	}()
 
 	return ips
 }
